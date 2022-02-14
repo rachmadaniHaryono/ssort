@@ -13,6 +13,8 @@ repos:
   hooks:
   - id: pretty-format-yaml
     args: [--autofix]
+  - id: pretty-format-ini
+    args: [--autofix]
 - repo: https://github.com/pycqa/isort
   rev: 5.10.1
   hooks:
