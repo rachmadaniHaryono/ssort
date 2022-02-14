@@ -111,7 +111,7 @@ Pre-commit config example:
     rev: 0.10.0
     hooks:
     - id: ssort
-  - epo: https://github.com/pycqa/isort
+  - repo: https://github.com/pycqa/isort
     rev: 5.10.1
     hooks:
     - id: isort
