@@ -31,3 +31,15 @@ repos:
   rev: v1.0.1
   hooks:
   - id: rst-linter
+- repo: local
+  hooks:
+  - id: pyflakes
+    name: pyflakes
+    entry: tox -e pyflakes
+    language: system
+    types: [python]
+  - id: pylint
+    name: pylint
+    entry: tox -e pylint
+    language: system
+    types: [python]
