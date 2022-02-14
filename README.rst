@@ -108,19 +108,19 @@ Pre-commit config example:
   repos:
   # ...
   - repo: https://github.com/bwhmather/ssort
-     rev: 0.10.0
-     hooks:
-     - id: ssort
-  - repo: https://github.com/pycqa/isort
-     rev: 5.10.1
-     hooks:
-     - id: isort
-       name: isort (python)
-       args: [--profile=black]
+    rev: 0.10.0
+    hooks:
+    - id: ssort
+  - epo: https://github.com/pycqa/isort
+    rev: 5.10.1
+    hooks:
+    - id: isort
+      name: isort (python)
+      args: [--profile=black]
   - repo: https://github.com/psf/black
-     rev: 22.1.0
-     hooks:
-     - id: black
+    rev: 22.1.0
+    hooks:
+    - id: black
 
 .. end-usage
 
