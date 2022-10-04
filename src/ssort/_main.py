@@ -1,31 +1,17 @@
 import argparse
 import difflib
-import pathlib
+import re
 import sys
 
-from ssort._exceptions import ResolutionError
+from ssort._exceptions import UnknownEncodingError
+from ssort._files import find_python_files
 from ssort._ssort import ssort
-
-
-def _find_files(patterns):
-    if not patterns:
-        patterns = ["."]
-
-    paths_set = set()
-    paths_list = []
-    for pattern in patterns:
-        path = pathlib.Path(pattern)
-        if path.suffix == ".py":
-            subpaths = [path]
-        else:
-            subpaths = list(path.glob("**/*.py"))
-
-        for subpath in sorted(subpaths):
-            if subpath not in paths_set:
-                paths_set.add(subpath)
-                paths_list.append(subpath)
-
-    return paths_list
+from ssort._utils import (
+    detect_encoding,
+    detect_newline,
+    escape_path,
+    normalize_newlines,
+)
 
 
 def main():
@@ -56,30 +42,84 @@ def main():
     unsortable = 0
     unchanged = 0
 
-    paths = _find_files(args.files)
-    for path in paths:
-        original = path.read_text()
+    for path in find_python_files(args.files):
+        errors = False
 
         try:
-            updated = ssort(original, filename=str(path))
-
-        except ResolutionError as e:
-            for req in e.unresolved:
-                sys.stderr.write(
-                    f"ERROR: unresolved dependency {req.name!r} "
-                    + f"in {str(path)!r}: "
-                    + f"line {req.lineno}, column {req.col_offset}\n"
-                )
+            original_bytes = path.read_bytes()
+        except FileNotFoundError:
+            sys.stderr.write(f"ERROR: {escape_path(path)} does not exist\n")
+            unsortable += 1
+            continue
+        except IsADirectoryError:
+            sys.stderr.write(f"ERROR: {escape_path(path)} is a directory\n")
+            unsortable += 1
+            continue
+        except PermissionError:
+            sys.stderr.write(f"ERROR: {escape_path(path)} is not readable\n")
             unsortable += 1
             continue
 
-        except SyntaxError as e:
+        # The logic for converting from bytes to text is duplicated in `ssort`
+        # and here because we need access to the text to be able to compute a
+        # diff at the end.
+        try:
+            encoding = detect_encoding(original_bytes)
+        except UnknownEncodingError as exc:
             sys.stderr.write(
-                f"ERROR: syntax error in {str(path)!r}: "
-                + f"line {e.lineno}, column {e.offset}\n"
+                f"ERROR: unknown encoding, {exc.encoding!r}, in {escape_path(path)}\n"
             )
             unsortable += 1
             continue
+
+        try:
+            original = original_bytes.decode(encoding)
+        except UnicodeDecodeError as exc:
+            sys.stderr.write(
+                f"ERROR: encoding error in {escape_path(path)}: {exc}\n"
+            )
+            unsortable += 1
+            continue
+
+        newline = detect_newline(original)
+        original = normalize_newlines(original)
+
+        def _on_parse_error(message, *, lineno, col_offset, **kwargs):
+            nonlocal errors
+            errors = True
+
+            sys.stderr.write(
+                f"ERROR: syntax error in {escape_path(path)}: "
+                + f"line {lineno}, column {col_offset}\n"
+            )
+
+        def _on_unresolved(message, *, name, lineno, col_offset, **kwargs):
+            nonlocal errors
+            errors = True
+
+            sys.stderr.write(
+                f"ERROR: unresolved dependency {name!r} "
+                + f"in {escape_path(path)}: "
+                + f"line {lineno}, column {col_offset}\n"
+            )
+
+        def _on_wildcard_import(**kwargs):
+            sys.stderr.write(
+                "WARNING: can't determine dependencies on * import\n"
+            )
+
+        try:
+            updated = ssort(
+                original,
+                filename=escape_path(path),
+                on_parse_error=_on_parse_error,
+                on_unresolved=_on_unresolved,
+                on_wildcard_import=_on_wildcard_import,
+            )
+
+            if errors:
+                unsortable += 1
+                continue
 
         except Exception as e:
             raise Exception(f"ERROR while sorting {path}\n") from e
@@ -88,11 +128,22 @@ def main():
             unsorted += 1
             if args.check:
                 sys.stderr.write(
-                    f"ERROR: {str(path)!r} is incorrectly sorted\n"
+                    f"ERROR: {escape_path(path)} is incorrectly sorted\n"
                 )
             else:
-                sys.stderr.write(f"Sorting {str(path)!r}\n")
-                path.write_text(updated)
+                sys.stderr.write(f"Sorting {escape_path(path)}\n")
+
+                # The logic for converting from bytes to text is duplicated in
+                # `ssort` and here because we need access to the text to be able
+                # to compute a diff at the end.
+                # We rename a little prematurely to avoid shadowing `updated`,
+                # which we use later for printing the diff.
+                updated_bytes = updated
+                if newline != "\n":
+                    updated_bytes = re.sub("\n", newline, updated_bytes)
+                updated_bytes = updated_bytes.encode(encoding)
+
+                path.write_bytes(updated_bytes)
         else:
             unchanged += 1
 
@@ -118,6 +169,8 @@ def main():
             summary.append(f"{_fmt_count(unchanged)} would be left unchanged")
         if unsortable:
             summary.append(f"{_fmt_count(unsortable)} would not be sortable")
+        if not unsorted and not unchanged and not unsortable:
+            summary.append("No files are present to be sorted. Nothing to do.")
 
         sys.stderr.write(", ".join(summary) + "\n")
 
@@ -139,6 +192,8 @@ def main():
             summary.append(f"{_fmt_count_were(unchanged)} left unchanged")
         if unsortable:
             summary.append(f"{_fmt_count_were(unsortable)} not sortable")
+        if not unsorted and not unchanged and not unsortable:
+            summary.append("No files are present to be sorted. Nothing to do.")
 
         sys.stderr.write(", ".join(summary) + "\n")
 

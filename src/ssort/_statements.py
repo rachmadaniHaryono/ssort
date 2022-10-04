@@ -1,57 +1,53 @@
+from __future__ import annotations
+
+import ast
+from typing import Iterable
+
 from ssort._bindings import get_bindings
 from ssort._method_requirements import get_method_requirements
-from ssort._requirements import get_requirements
+from ssort._requirements import Requirement, get_requirements
+from ssort._utils import cached_method
 
 
 class Statement:
-    def __init__(self, *, text, node, start_row, start_col):
-        self._text = text
-        self._node = node
-        self._start_row = start_row
-        self._start_col = start_col
+    def __init__(
+        self, *, text: str, node: ast.AST, start_row: int, start_col: int
+    ) -> None:
+        self.text = text
+        self.node = node
+        self.start_row = start_row
+        self.start_col = start_col
 
-    def __repr__(self):
-        return f"<Statement text={self._text!r}>"
+    @cached_method
+    def text_padded(self) -> str:
+        """
+        Return the statement text padded with leading whitespace so that
+        coordinates in the ast match up with coordinates in the text.
+        """
+        return ("\n" * self.start_row) + (" " * self.start_col) + self.text
 
+    @cached_method
+    def requirements(self) -> Iterable[Requirement]:
+        """
+        Returns an iterable yielding Requirement objects describing the
+        bindings that this statement references.
+        """
+        return tuple(get_requirements(self.node))
 
-def statement_node(statement):
-    return statement._node
+    @cached_method
+    def method_requirements(self) -> Iterable[str]:
+        """
+        Returns an iterable yielding the names of attributes of the `self`
+        parameter that this statement depends on.
+        """
+        return tuple(get_method_requirements(self.node))
 
+    @cached_method
+    def bindings(self) -> Iterable[str]:
+        """
+        Returns an iterable yielding the names bound by this statement.
+        """
+        return tuple(get_bindings(self.node))
 
-def statement_text(statement):
-    return statement._text
-
-
-def statement_text_padded(statement):
-    """
-    Return the statement text padded with leading whitespace so that
-    coordinates in the ast match up with coordinates in the text.
-    """
-    return (
-        ("\n" * statement._start_row)
-        + (" " * statement._start_col)
-        + statement._text
-    )
-
-
-def statement_requirements(statement):
-    """
-    Returns an iterable yielding Requirement objects describing the bindings
-    that a statement references.
-    """
-    return get_requirements(statement_node(statement))
-
-
-def statement_method_requirements(statement):
-    """
-    Returns an iterable yielding the names of attributes of the `self` parameter
-    that a statement depends on.
-    """
-    return get_method_requirements(statement_node(statement))
-
-
-def statement_bindings(statement):
-    """
-    Returns an iterable yielding the names bound by a statement.
-    """
-    return get_bindings(statement_node(statement))
+    def __repr__(self) -> str:
+        return f"<Statement text={self.text!r}>"

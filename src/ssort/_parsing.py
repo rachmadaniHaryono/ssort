@@ -1,14 +1,11 @@
 import ast
+import warnings
 from io import StringIO
 from token import NAME
 from tokenize import generate_tokens
 
-from ssort._statements import (
-    Statement,
-    statement_node,
-    statement_text,
-    statement_text_padded,
-)
+from ssort._exceptions import ParseError
+from ssort._statements import Statement
 
 
 def _find_start(node):
@@ -29,11 +26,10 @@ def _find_end(node):
 def split(
     root_text,
     *,
-    nodes=None,
+    nodes,
     next_row=0,
     next_col=0,
     indent=0,
-    filename="<unknown>"
 ):
     # Build an index of row lengths and start offsets to enable fast string
     # indexing using ast row/column coordinates.
@@ -45,11 +41,7 @@ def split(
             row_offsets.append(offset + 1)
     row_lengths.append(len(root_text) - row_offsets[-1])
 
-    if nodes is None:
-        root_node = ast.parse(root_text, filename)
-        nodes = iter(root_node.body)
-    else:
-        nodes = iter(nodes)
+    nodes = iter(nodes)
 
     next_node = next(nodes, None)
 
@@ -110,9 +102,9 @@ def split(
 
 
 def split_class(statement):
-    node = statement_node(statement)
-    text = statement_text(statement)
-    text_padded = statement_text_padded(statement)
+    node = statement.node
+    text = statement.text
+    text_padded = statement.text_padded()
 
     # Build an index of row lengths and start offsets to enable fast string
     # indexing using ast row/column coordinates.
@@ -202,3 +194,13 @@ def split_class(statement):
         )
 
     return head_text, body_statements
+
+
+def parse(root_text, *, filename="<unknown>"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            root_node = ast.parse(root_text, filename)
+        except SyntaxError as exc:
+            raise ParseError(exc.msg, lineno=exc.lineno, col_offset=exc.offset)
+    return split(root_text, nodes=list(root_node.body))

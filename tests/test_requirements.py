@@ -2,7 +2,14 @@ import ast
 import sys
 import textwrap
 
+import pytest
+
 from ssort._requirements import get_requirements
+
+match_statement = pytest.mark.skipif(
+    sys.version_info < (3, 10),
+    reason="match statements were introduced in python 3.10",
+)
 
 
 def _parse(source):
@@ -151,7 +158,6 @@ def test_function_def_requirements_nonlocal_closure_capture():
             return inner
         """
     )
-
     assert _dep_names(node) == []
 
 
@@ -190,8 +196,27 @@ def test_function_def_requirements_global_closure_no_capture():
             return inner
         """
     )
-
     assert _dep_names(node) == ["a"]
+
+
+def test_function_def_requirements_default():
+    node = _parse(
+        """
+        def function(a=b):
+            pass
+        """
+    )
+    assert _dep_names(node) == ["b"]
+
+
+def test_function_def_requirements_annotations():
+    node = _parse(
+        """
+        def function(a: b) -> c:
+            pass
+        """
+    )
+    assert _dep_names(node) == ["b", "c"]
 
 
 def test_async_function_def_requirements():
@@ -356,6 +381,11 @@ def test_aug_assign_requirements():
     assert _dep_names(node) == ["b"]
 
 
+def test_aug_assign_requirements_attribute():
+    node = _parse("a.b += c")
+    assert _dep_names(node) == ["a", "c"]
+
+
 def test_ann_assign_requirements():
     """
     ..code:: python
@@ -364,8 +394,13 @@ def test_ann_assign_requirements():
         AnnAssign(expr target, expr annotation, expr? value, int simple)
 
     """
-    node = _parse("a: int = b")
-    assert _dep_names(node) == ["b"]
+    node = _parse("a: b = c")
+    assert _dep_names(node) == ["b", "c"]
+
+
+def test_ann_assign_requirements_attribute():
+    node = _parse("a.b: c = d")
+    assert _dep_names(node) == ["a", "c", "d"]
 
 
 def test_for_requirements():
@@ -400,6 +435,16 @@ def test_for_requirements_target_replaces_scope():
         """
     )
     assert _dep_names(node) == ["a"]
+
+
+def test_for_requirements_attribute():
+    node = _parse(
+        """
+        for a.b in c:
+            pass
+        """
+    )
+    assert _dep_names(node) == ["a", "c"]
 
 
 def test_async_for_requirements():
@@ -473,6 +518,26 @@ def test_with_requirements():
         """
     )
     assert _dep_names(node) == ["A", "b"]
+
+
+def test_with_requirements_shadow():
+    node = _parse(
+        """
+        with a as a:
+            pass
+        """
+    )
+    assert _dep_names(node) == ["a"]
+
+
+def test_with_requirements_attribute():
+    node = _parse(
+        """
+        with a as b.c:
+            pass
+        """
+    )
+    assert _dep_names(node) == ["a", "b"]
 
 
 def test_with_requirements_bindings():
@@ -671,6 +736,16 @@ def test_lambda_requirements():
     assert _dep_names(node) == ["other"]
 
 
+def test_lambda_requirements_default():
+    node = _parse("lambda a=b: a")
+    assert _dep_names(node) == ["b"]
+
+
+def test_lambda_requirements_walrus_operator():
+    node = _parse("lambda: (a := 1) + a")
+    assert _dep_names(node) == []
+
+
 def test_if_exp_requirements():
     """
     ..code:: python
@@ -687,7 +762,7 @@ def test_dict_requirements():
         Dict(expr* keys, expr* values)
     """
     node = _parse("{key: value}")
-    assert _dep_names(node) == ["value"]
+    assert _dep_names(node) == ["key", "value"]
 
 
 def test_dict_requirements_empty():
@@ -836,7 +911,18 @@ def test_formatted_value_requirements():
 
         FormattedValue(expr value, int? conversion, expr? format_spec)
     """
-    pass
+    node = _parse("f'{a} {b} {c}'")
+    assert _dep_names(node) == ["a", "b", "c"]
+
+
+def test_formatted_value_requirements_format_spec():
+    node = _parse("f'{a} {b:{c}} {d}'")
+    assert _dep_names(node) == ["a", "b", "c", "d"]
+
+
+def test_formatted_value_requirements_format_spec_walrus():
+    node = _parse("f'{a} {b:{(c := 1)}} {d}'")
+    assert _dep_names(node) == ["a", "b", "d"]
 
 
 def test_joined_str_requirements():
@@ -954,3 +1040,123 @@ def test_slice_requirements():
 
     """
     pass
+
+
+@match_statement
+def test_match_statement_requirements_literal():
+    node = _parse(
+        """
+        match a:
+            case True:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a"]
+
+
+@match_statement
+def test_match_statement_requirements_capture():
+    node = _parse(
+        """
+        match a:
+            case b:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a"]
+
+
+@match_statement
+def test_match_statement_requirements_wildcard():
+    node = _parse(
+        """
+        match a:
+            case _:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a"]
+
+
+@match_statement
+def test_match_statement_requirements_constant():
+    node = _parse(
+        """
+        match a:
+            case 1:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a"]
+
+
+@match_statement
+def test_match_statement_requirements_named_constant():
+    node = _parse(
+        """
+        match a:
+            case MyEnum.CONSTANT:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a", "MyEnum"]
+
+
+@match_statement
+def test_match_statement_requirements_sequence():
+    node = _parse(
+        """
+        match a:
+            case [b, *c, d, _]:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a"]
+
+
+@match_statement
+def test_match_statement_requirements_mapping():
+    node = _parse(
+        """
+        match a:
+            case {"k1": "v1", "k2": b, "k3": _, **c}:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a"]
+
+
+@match_statement
+def test_match_statement_requirements_class():
+    node = _parse(
+        """
+        match a:
+            case MyClass(0, b, x=_, y=c):
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a", "MyClass"]
+
+
+@match_statement
+def test_match_statement_requirements_or():
+    node = _parse(
+        """
+        match a:
+            case b | c:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a"]
+
+
+@match_statement
+def test_match_statement_requirements_as():
+    node = _parse(
+        """
+        match a:
+            case b as c:
+                pass
+        """
+    )
+    assert _dep_names(node) == ["a"]

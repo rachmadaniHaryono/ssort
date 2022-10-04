@@ -1,11 +1,9 @@
-from ssort._parsing import split, split_class
-from ssort._statements import statement_text
+from ssort._parsing import parse, split_class
 
 
 def _split_text(source):
     return [
-        statement_text(statement)
-        for statement in split(source, filename="<unknown>")
+        statement.text for statement in parse(source, filename="<unknown>")
     ]
 
 
@@ -78,9 +76,9 @@ def test_split_function_def():
 
 
 def _split_class(source, index=-1):
-    statements = list(split(source))
+    statements = list(parse(source))
     head, body = split_class(statements[index])
-    return head, [statement_text(child) for child in body]
+    return head, [child.text for child in body]
 
 
 def test_split_class_simple():

@@ -1,13 +1,18 @@
 name: CI
 
-on: [push]
+on:
+  push:
+    branches: [master]
+  pull_request: ~
+
 jobs:
   unittests:
     name: "Unit Tests"
-    runs-on: ubuntu-18.04
     strategy:
       matrix:
-        python-version: [3.8, 3.9]
+        python-version: ["3.8", "3.9", "3.10"]
+        runs-on: ["ubuntu-18.04", "windows-2019", "macos-11"]
+    runs-on: ${{ matrix.runs-on }}
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
@@ -23,15 +28,38 @@ jobs:
       run: |
         pytest -v tests/
 
+  coverage:
+    name: "Coverage"
+    runs-on: ubuntu-18.04
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.10"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov coveralls
+        pip install -e .[test]
+    - name: Run tests
+      run: |
+        pytest --cov=ssort -v tests/
+    - name: Upload coverage report to coveralls
+      run: |
+        coveralls --service=github
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   black:
     name: "Black"
     runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python 3.9
+    - name: Set up Python 3.10
       uses: actions/setup-python@v2
       with:
-        python-version: 3.9
+        python-version: "3.10"
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -45,10 +73,10 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python 3.9
+    - name: Set up Python 3.10
       uses: actions/setup-python@v2
       with:
-        python-version: 3.9
+        python-version: "3.10"
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -62,10 +90,10 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python 3.9
+    - name: Set up Python 3.10
       uses: actions/setup-python@v2
       with:
-        python-version: 3.9
+        python-version: "3.10"
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -79,10 +107,10 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python 3.9
+    - name: Set up Python 3.10
       uses: actions/setup-python@v2
       with:
-        python-version: 3.9
+        python-version: "3.10"
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -96,10 +124,10 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python 3.9
+    - name: Set up Python 3.10
       uses: actions/setup-python@v2
       with:
-        python-version: 3.9
+        python-version: "3.10"
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -110,20 +138,21 @@ jobs:
       run: |
         pylint -E src/ tests/ setup.py
 
-  upload:
-    name: "Upload to Python Package Index"
+  mypy:
+    name: "Mypy"
     runs-on: ubuntu-18.04
-    if: success() && startsWith(github.ref, 'refs/tags')
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.7
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.7
-    - name: Build source distribution
-      run: |
-        python setup.py sdist
-    - name: Publish distribution to PyPI
-      uses: pypa/gh-action-pypi-publish@master
-      with:
-        password: ${{ secrets.PYPI_API_TOKEN }}
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mypy
+          pip install pytest
+          pip install types-setuptools
+      - name: Run mypy
+        run: |
+          mypy src/ssort tests setup.py
